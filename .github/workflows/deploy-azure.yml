@@ -23,6 +23,9 @@ jobs:
       (github.event.workflow_run.head_branch == 'main' ||
        github.event.workflow_run.head_branch == 'master')
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Log in to Azure
         uses: azure/login@v2
@@ -32,8 +35,44 @@ jobs:
       - name: Set image names and tag
         run: |
           REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          echo "API_IMAGE=${{ env.REGISTRY }}/${REPO}:${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_ENV"
-          echo "UI_IMAGE=${{ env.REGISTRY }}/${REPO}-streamlit:${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_ENV"
+          TAG=latest
+          # :latest is pushed on every main CI run; SHA tags may be missing if Deploy is re-run alone.
+          echo "IMAGE_TAG=${TAG}" >> "$GITHUB_ENV"
+          echo "COMMIT_SHA=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_ENV"
+          echo "API_IMAGE=${{ env.REGISTRY }}/${REPO}:${TAG}" >> "$GITHUB_ENV"
+          echo "UI_IMAGE=${{ env.REGISTRY }}/${REPO}-streamlit:${TAG}" >> "$GITHUB_ENV"
+
+      - name: Verify images exist in GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Inspect GHCR manifests before deploy
+        run: |
+          docker manifest inspect "$API_IMAGE"
+          docker manifest inspect "$UI_IMAGE"
+
+      - name: Configure GHCR pull on Container Apps (private packages)
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GHCR_USER: ${{ secrets.GHCR_USER }}
+        run: |
+          if [ -n "$GHCR_TOKEN" ]; then
+            USER="${GHCR_USER:-DeepakGuptaaiml}"
+            for APP in "${{ env.API_APP_NAME }}" "${{ env.UI_APP_NAME }}"; do
+              echo "Setting GHCR registry credentials on $APP"
+              az containerapp registry set \
+                --name "$APP" \
+                --resource-group "${{ env.RESOURCE_GROUP }}" \
+                --server ghcr.io \
+                --username "$USER" \
+                --password "$GHCR_TOKEN"
+            done
+          else
+            echo "GHCR_TOKEN not set — assuming public GHCR packages (make packages Public in GitHub)"
+          fi
 
       - name: Deploy API Container App
         run: |
@@ -72,6 +111,7 @@ jobs:
             --resource-group "${{ env.RESOURCE_GROUP }}" \
             --query "properties.configuration.ingress.fqdn" -o tsv)
           echo "## Deployed to Azure" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Commit:** \`${COMMIT_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- **API image:** \`$API_IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- **UI image:** \`$UI_IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- **API URL:** https://${API_FQDN}" >> "$GITHUB_STEP_SUMMARY"
