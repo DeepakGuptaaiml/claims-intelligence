@@ -58,23 +58,23 @@ docker compose up --build
 pytest tests/ -v
 ```
 
-## Deploy to Azure (Container Apps)
+## Deploy to Azure — API only
 
-Use the image built by GitHub Actions — no local Docker needed.
+**Full guide:** [docs/AZURE_API_DEPLOY.md](docs/AZURE_API_DEPLOY.md)
 
-1. Push code to GitHub (`main` branch) and wait for the **CI** workflow to finish.
-2. Image will be at: `ghcr.io/deepakguptaaiml/claims-intelligence:latest`
-3. In Azure Portal → **Container Apps** → create app:
-   - Image: `ghcr.io/deepakguptaaiml/claims-intelligence:latest`
-   - Registry credentials: GitHub PAT with `read:packages` (for private packages)
-   - Ingress: **external**, port **8000**
-   - Health probe: `GET /health`
-4. Optional: attach **Application Insights** for latency/error monitoring.
+Quick summary:
+1. Make GHCR package **Public** (GitHub → Packages → claims-intelligence)
+2. `az login`
+3. `./scripts/deploy-azure-api.sh`
+4. Open `https://<your-app>.azurecontainerapps.io/docs`
 
-```bash
-# Alternative: build directly in Azure Container Registry (also no local Docker)
-az acr build --registry <your-acr> --image claims-reserve-api:v1 .
-```
+| Setting | Value |
+|---------|--------|
+| Image | `ghcr.io/deepakguptaaiml/claims-intelligence:latest` |
+| Port | `8000` |
+| Health probe | `GET /health` |
+
+Streamlit stays **local** for v1; point `API_URL` at the Azure URL to demo UI against cloud API.
 
 ## Model metrics (test set)
 
