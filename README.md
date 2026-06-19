@@ -74,7 +74,12 @@ Quick summary:
 | Port | `8000` |
 | Health probe | `GET /health` |
 
-Streamlit stays **local** for v1; point `API_URL` at the Azure URL to demo UI against cloud API.
+Streamlit stays **local** for v1; **Azure Streamlit guide:** [docs/AZURE_STREAMLIT_DEPLOY.md](docs/AZURE_STREAMLIT_DEPLOY.md)
+
+| Image | Purpose |
+|-------|---------|
+| `ghcr.io/deepakguptaaiml/claims-intelligence:latest` | API |
+| `ghcr.io/deepakguptaaiml/claims-intelligence-streamlit:latest` | Streamlit UI |
 
 ## Model metrics (test set)
 

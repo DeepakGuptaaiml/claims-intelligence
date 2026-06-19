@@ -5,7 +5,7 @@ Deploy the **FastAPI** reserve forecasting API to Azure Container Apps using the
 **Image:** `ghcr.io/deepakguptaaiml/claims-intelligence:latest`  
 **Port:** `8000`  
 **Health:** `GET /health`  
-**Streamlit:** stays local for now (calls API via `API_URL` when you add UI later)
+**Streamlit UI:** deploy separately — see [AZURE_STREAMLIT_DEPLOY.md](AZURE_STREAMLIT_DEPLOY.md)
 
 ---
 
