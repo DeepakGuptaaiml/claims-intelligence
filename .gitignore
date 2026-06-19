@@ -8,6 +8,7 @@ __pycache__/
 
 # Large notebook outputs (keep source notebook)
 *_executed.ipynb
+Copy_of_AML_Project_LearnerNotebook_FullCode.ipynb
 
 # IDE
 .idea/
