@@ -48,7 +48,9 @@ def check_health() -> tuple[bool, str]:
 def apply_sample_to_form(sample: dict) -> None:
     """Push API sample claim values into Streamlit widget session state."""
     for key, value in sample.items():
-        if key in ("days_in_hospital", "reported_delay_days") and value is None:
+        if key == "num_previous_claims":
+            st.session_state[key] = int(value)
+        elif key in ("days_in_hospital", "reported_delay_days") and value is None:
             st.session_state[key] = 0.0
         else:
             st.session_state[key] = value
@@ -91,6 +93,23 @@ try:
 except requests.RequestException as exc:
     st.error(f"Failed to load form options: {exc}")
     st.stop()
+
+with st.expander("Load sample claim from training data"):
+    if st.button("Fill form from random claim", key="load_sample_btn"):
+        try:
+            response = requests.get(f"{API_URL}/model/sample", timeout=10)
+            response.raise_for_status()
+            sample = response.json()
+        except requests.RequestException as exc:
+            st.error(f"Could not load sample claim: {exc}")
+        else:
+            apply_sample_to_form(sample)
+            st.session_state["loaded_sample"] = sample
+            st.rerun()
+
+    if sample := st.session_state.get("loaded_sample"):
+        st.info("Form filled with a random claim from training data.")
+        st.json(sample)
 
 col1, col2 = st.columns(2)
 
@@ -178,23 +197,6 @@ if st.button("Predict Total Reserve", type="primary", use_container_width=True):
 
     st.subheader("Request payload")
     st.json(payload)
-
-with st.expander("Load sample claim from training data"):
-    if st.button("Fill form from random claim"):
-        try:
-            response = requests.get(f"{API_URL}/model/sample", timeout=10)
-            response.raise_for_status()
-            sample = response.json()
-        except requests.RequestException as exc:
-            st.error(f"Could not load sample claim: {exc}")
-        else:
-            apply_sample_to_form(sample)
-            st.session_state["loaded_sample"] = sample
-            st.rerun()
-
-    if sample := st.session_state.get("loaded_sample"):
-        st.info("Form filled with a random claim from training data.")
-        st.json(sample)
 
 st.markdown("---")
 st.caption(
