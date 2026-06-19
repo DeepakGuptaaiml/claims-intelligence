@@ -1,0 +1,78 @@
+# Continuous deployment: update Azure Container Apps after CI succeeds on main.
+# One-time setup: docs/AZURE_CD_SETUP.md (Azure service principal + GitHub secret).
+
+name: Deploy to Azure
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+    branches: [main, master]
+
+env:
+  REGISTRY: ghcr.io
+  RESOURCE_GROUP: rg-claims-intelligence
+  API_APP_NAME: claims-reserve-api
+  UI_APP_NAME: claims-reserve-ui
+
+jobs:
+  deploy:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      (github.event.workflow_run.head_branch == 'main' ||
+       github.event.workflow_run.head_branch == 'master')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set image names and tag
+        run: |
+          REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "API_IMAGE=${{ env.REGISTRY }}/${REPO}:${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_ENV"
+          echo "UI_IMAGE=${{ env.REGISTRY }}/${REPO}-streamlit:${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_ENV"
+
+      - name: Deploy API Container App
+        run: |
+          az containerapp update \
+            --name "${{ env.API_APP_NAME }}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --image "$API_IMAGE"
+
+      - name: Deploy Streamlit Container App
+        run: |
+          az containerapp update \
+            --name "${{ env.UI_APP_NAME }}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --image "$UI_IMAGE"
+
+      - name: Verify API health
+        run: |
+          FQDN=$(az containerapp show \
+            --name "${{ env.API_APP_NAME }}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "API URL: https://${FQDN}"
+          sleep 20
+          curl -sf "https://${FQDN}/health"
+          curl -sf "https://${FQDN}/model/sample" | head -c 200
+          echo ""
+
+      - name: Deployment summary
+        run: |
+          API_FQDN=$(az containerapp show \
+            --name "${{ env.API_APP_NAME }}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          UI_FQDN=$(az containerapp show \
+            --name "${{ env.UI_APP_NAME }}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "## Deployed to Azure" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **API image:** \`$API_IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **UI image:** \`$UI_IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **API URL:** https://${API_FQDN}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **UI URL:** https://${UI_FQDN}" >> "$GITHUB_STEP_SUMMARY"

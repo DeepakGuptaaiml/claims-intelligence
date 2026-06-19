@@ -7,6 +7,8 @@ Deploy the **FastAPI** reserve forecasting API to Azure Container Apps using the
 **Health:** `GET /health`  
 **Streamlit UI:** deploy separately — see [AZURE_STREAMLIT_DEPLOY.md](AZURE_STREAMLIT_DEPLOY.md)
 
+**Auto-deploy (CD):** after bootstrap, configure [AZURE_CD_SETUP.md](AZURE_CD_SETUP.md) so every green CI push updates Container Apps automatically.
+
 ---
 
 ## Prerequisites

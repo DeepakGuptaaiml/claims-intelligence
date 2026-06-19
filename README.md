@@ -33,12 +33,15 @@ streamlit run streamlit_app.py
 
 Push to `main` and **GitHub Actions** will:
 1. Run tests
-2. Build the Docker image on GitHub's servers
-3. Push to **GitHub Container Registry (GHCR)**:
+2. Build API + Streamlit Docker images on GitHub's servers
+3. Push to **GitHub Container Registry (GHCR)**
+4. **Auto-deploy to Azure** (after one-time [CD setup](docs/AZURE_CD_SETUP.md))
 
 ```
 ghcr.io/deepakguptaaiml/claims-intelligence:latest
 ghcr.io/deepakguptaaiml/claims-intelligence:<commit-sha>
+ghcr.io/deepakguptaaiml/claims-intelligence-streamlit:latest
+ghcr.io/deepakguptaaiml/claims-intelligence-streamlit:<commit-sha>
 ```
 
 After the first push, make the package **public** (if needed):
@@ -58,23 +61,15 @@ docker compose up --build
 pytest tests/ -v
 ```
 
-## Deploy to Azure — API only
+## Deploy to Azure
 
-**Full guide:** [docs/AZURE_API_DEPLOY.md](docs/AZURE_API_DEPLOY.md)
+| Guide | Purpose |
+|-------|---------|
+| [docs/AZURE_API_DEPLOY.md](docs/AZURE_API_DEPLOY.md) | Bootstrap API Container App (first time) |
+| [docs/AZURE_STREAMLIT_DEPLOY.md](docs/AZURE_STREAMLIT_DEPLOY.md) | Bootstrap Streamlit Container App |
+| [docs/AZURE_CD_SETUP.md](docs/AZURE_CD_SETUP.md) | **Auto-deploy** on every green CI push (no manual revisions) |
 
-Quick summary:
-1. Make GHCR package **Public** (GitHub → Packages → claims-intelligence)
-2. `az login`
-3. `./scripts/deploy-azure-api.sh`
-4. Open `https://<your-app>.azurecontainerapps.io/docs`
-
-| Setting | Value |
-|---------|--------|
-| Image | `ghcr.io/deepakguptaaiml/claims-intelligence:latest` |
-| Port | `8000` |
-| Health probe | `GET /health` |
-
-Streamlit stays **local** for v1; **Azure Streamlit guide:** [docs/AZURE_STREAMLIT_DEPLOY.md](docs/AZURE_STREAMLIT_DEPLOY.md)
+After CD is configured, `git push main` → CI → GHCR → Azure revision rollout automatically.
 
 | Image | Purpose |
 |-------|---------|
