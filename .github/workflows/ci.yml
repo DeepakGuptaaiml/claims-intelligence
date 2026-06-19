@@ -70,8 +70,7 @@ jobs:
 
       - name: Smoke test container
         run: |
-          docker run -d --name api-test -p 8000:8000 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker run -d --name api-test -p 8000:8000 ${{ steps.build.outputs.imageid }}
           sleep 10
           curl -f http://localhost:8000/health
           docker stop api-test
