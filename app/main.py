@@ -1,8 +1,11 @@
+import json
+import random
+
 import joblib
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 
-from app.config import MODEL_PATH
+from app.config import MODEL_PATH, SAMPLE_CLAIMS_PATH
 from app.preprocess import load_preprocess_config, predict_reserve
 from app.schemas import (
     ClaimFeatures,
@@ -12,6 +15,13 @@ from app.schemas import (
 )
 
 artifact: dict = {}
+
+
+def _load_sample_claims() -> list[dict]:
+    if not SAMPLE_CLAIMS_PATH.exists():
+        return []
+    with open(SAMPLE_CLAIMS_PATH, encoding="utf-8") as f:
+        return json.load(f)
 
 
 @asynccontextmanager
@@ -65,6 +75,14 @@ def model_info():
 def model_options():
     config = artifact.get("config") or load_preprocess_config()
     return config.get("categorical_options", {})
+
+
+@app.get("/model/sample", response_model=ClaimFeatures)
+def model_sample():
+    samples = _load_sample_claims()
+    if not samples:
+        raise HTTPException(status_code=503, detail="No sample claims available")
+    return random.choice(samples)
 
 
 @app.post("/predict", response_model=PredictionResponse)

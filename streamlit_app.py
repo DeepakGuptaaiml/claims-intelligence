@@ -2,7 +2,6 @@
 
 import os
 
-import pandas as pd
 import requests
 import streamlit as st
 
@@ -32,18 +31,35 @@ def fetch_model_info() -> dict:
     return response.json()
 
 
-def check_health() -> bool:
+def check_health() -> tuple[bool, str]:
+    """Return (ok, detail) for sidebar status."""
     try:
-        response = requests.get(f"{API_URL}/health", timeout=5)
-        return response.status_code == 200 and response.json().get("model_loaded")
-    except requests.RequestException:
-        return False
+        response = requests.get(f"{API_URL}/health", timeout=10)
+        if response.status_code != 200:
+            return False, f"HTTP {response.status_code} from {API_URL}/health"
+        body = response.json()
+        if not body.get("model_loaded"):
+            return False, f"API up but model not loaded: {body}"
+        return True, ""
+    except requests.RequestException as exc:
+        return False, str(exc)
+
+
+def apply_sample_to_form(sample: dict) -> None:
+    """Push API sample claim values into Streamlit widget session state."""
+    for key, value in sample.items():
+        if key in ("days_in_hospital", "reported_delay_days") and value is None:
+            st.session_state[key] = 0.0
+        else:
+            st.session_state[key] = value
 
 
 with st.sidebar:
     st.header("API Status")
-    if check_health():
-        st.success(f"Connected to {API_URL}")
+    st.caption(f"**API_URL:** `{API_URL}`")
+    healthy, health_detail = check_health()
+    if healthy:
+        st.success("Connected to API")
         try:
             info = fetch_model_info()
             st.markdown(f"**Model:** {info['model_name']}")
@@ -56,10 +72,18 @@ with st.sidebar:
             st.warning(f"Could not load model info: {exc}")
     else:
         st.error("API unavailable")
-        st.code(
-            "uvicorn app.main:app --reload --host 127.0.0.1 --port 8000",
-            language="bash",
-        )
+        st.markdown(f"**Error:** {health_detail}")
+        if API_URL in ("http://127.0.0.1:8000", "http://api:8000"):
+            st.warning(
+                "Set **API_URL** to your deployed FastAPI URL (HTTPS, no trailing slash). "
+                "Azure: Container App → **claims-reserve-ui** → **Containers** → "
+                "**Environment variables** → add `API_URL=https://<your-api-fqdn>` → **Create new revision**."
+            )
+        else:
+            st.info(
+                "Verify the API is running: open `{url}/health` in a browser or run "
+                "`curl {url}/health`.".format(url=API_URL.rstrip("/"))
+            )
         st.stop()
 
 try:
@@ -72,25 +96,49 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("Claimant & Clinical")
-    patient_age = st.number_input("Patient age", min_value=18.0, max_value=100.0, value=65.0)
-    diagnosis_code = st.selectbox("Diagnosis code", options["diagnosis_code"])
-    procedure_code = st.selectbox("Procedure code", options["procedure_code"])
-    injury_severity = st.selectbox("Injury severity", options["injury_severity"])
-    admission_type = st.selectbox("Admission type", options["admission_type"])
+    patient_age = st.number_input(
+        "Patient age", min_value=18.0, max_value=100.0, value=65.0, key="patient_age"
+    )
+    diagnosis_code = st.selectbox(
+        "Diagnosis code", options["diagnosis_code"], key="diagnosis_code"
+    )
+    procedure_code = st.selectbox(
+        "Procedure code", options["procedure_code"], key="procedure_code"
+    )
+    injury_severity = st.selectbox(
+        "Injury severity", options["injury_severity"], key="injury_severity"
+    )
+    admission_type = st.selectbox(
+        "Admission type", options["admission_type"], key="admission_type"
+    )
     days_in_hospital = st.number_input(
-        "Days in hospital (leave 0 to impute median)", min_value=0.0, value=0.0
+        "Days in hospital (leave 0 to impute median)",
+        min_value=0.0,
+        value=0.0,
+        key="days_in_hospital",
     )
 
 with col2:
     st.subheader("Financial & History")
-    initial_estimate = st.number_input("Initial estimate ($)", min_value=0.0, value=5000.0)
-    num_previous_claims = st.number_input("Previous claims", min_value=0, value=0, step=1)
-    avg_previous_reserve = st.number_input("Avg previous reserve ($)", min_value=0.0, value=0.0)
-    reported_delay_days = st.number_input(
-        "Reported delay days (0 = impute median)", min_value=0.0, value=0.0
+    initial_estimate = st.number_input(
+        "Initial estimate ($)", min_value=0.0, value=5000.0, key="initial_estimate"
     )
-    provider_type = st.text_input("Provider type (proc unit)", value="29")
-    state = st.selectbox("State", options["state"])
+    num_previous_claims = st.number_input(
+        "Previous claims", min_value=0, value=0, step=1, key="num_previous_claims"
+    )
+    avg_previous_reserve = st.number_input(
+        "Avg previous reserve ($)", min_value=0.0, value=0.0, key="avg_previous_reserve"
+    )
+    reported_delay_days = st.number_input(
+        "Reported delay days (0 = impute median)",
+        min_value=0.0,
+        value=0.0,
+        key="reported_delay_days",
+    )
+    provider_type = st.text_input(
+        "Provider type (proc unit)", value="29", key="provider_type"
+    )
+    state = st.selectbox("State", options["state"], key="state")
 
 payload = {
     "patient_age": patient_age,
@@ -132,13 +180,21 @@ if st.button("Predict Total Reserve", type="primary", use_container_width=True):
     st.json(payload)
 
 with st.expander("Load sample claim from training data"):
-    sample_file = "data/claims_data.csv"
     if st.button("Fill form from random claim"):
-        df = pd.read_csv(sample_file)
-        row = df.sample(1, random_state=42).iloc[0]
-        st.session_state["sample"] = row
-        st.info("Re-run the app sections above or use values below:")
-        st.dataframe(row)
+        try:
+            response = requests.get(f"{API_URL}/model/sample", timeout=10)
+            response.raise_for_status()
+            sample = response.json()
+        except requests.RequestException as exc:
+            st.error(f"Could not load sample claim: {exc}")
+        else:
+            apply_sample_to_form(sample)
+            st.session_state["loaded_sample"] = sample
+            st.rerun()
+
+    if sample := st.session_state.get("loaded_sample"):
+        st.info("Form filled with a random claim from training data.")
+        st.json(sample)
 
 st.markdown("---")
 st.caption(

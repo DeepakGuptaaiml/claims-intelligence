@@ -54,6 +54,16 @@ def test_predict(client, sample_payload):
     assert body["total_reserve"] >= 0
 
 
+def test_model_sample(client):
+    response = client.get("/model/sample")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["state"]
+    assert body["initial_estimate"] > 0
+    predict_response = client.post("/predict", json=body)
+    assert predict_response.status_code == 200
+
+
 def test_predict_preprocess_unit(sample_payload):
     artifact = joblib.load("models/best_reserve_model.pkl")
     reserve = predict_reserve(
