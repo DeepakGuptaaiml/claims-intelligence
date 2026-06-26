@@ -27,6 +27,11 @@ jobs:
       contents: read
       packages: read
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
       - name: Log in to Azure
         uses: azure/login@v2
         with:
@@ -35,12 +40,14 @@ jobs:
       - name: Set image names and tag
         run: |
           REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          TAG=latest
-          # :latest is pushed on every main CI run; SHA tags may be missing if Deploy is re-run alone.
-          echo "IMAGE_TAG=${TAG}" >> "$GITHUB_ENV"
-          echo "COMMIT_SHA=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_ENV"
-          echo "API_IMAGE=${{ env.REGISTRY }}/${REPO}:${TAG}" >> "$GITHUB_ENV"
-          echo "UI_IMAGE=${{ env.REGISTRY }}/${REPO}-streamlit:${TAG}" >> "$GITHUB_ENV"
+          FULL_SHA="${{ github.event.workflow_run.head_sha }}"
+          SHORT_SHA="${FULL_SHA:0:7}"
+          # GHCR tags images with 7-char SHA (metadata-action default), not full SHA.
+          echo "IMAGE_TAG=${SHORT_SHA}" >> "$GITHUB_ENV"
+          echo "COMMIT_SHA=${FULL_SHA}" >> "$GITHUB_ENV"
+          echo "REVISION_SUFFIX=r${SHORT_SHA}" >> "$GITHUB_ENV"
+          echo "API_IMAGE=${{ env.REGISTRY }}/${REPO}:${SHORT_SHA}" >> "$GITHUB_ENV"
+          echo "UI_IMAGE=${{ env.REGISTRY }}/${REPO}-streamlit:${SHORT_SHA}" >> "$GITHUB_ENV"
 
       - name: Verify images exist in GHCR
         uses: docker/login-action@v3
@@ -79,14 +86,27 @@ jobs:
           az containerapp update \
             --name "${{ env.API_APP_NAME }}" \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
-            --image "$API_IMAGE"
+            --image "$API_IMAGE" \
+            --revision-suffix "$REVISION_SUFFIX"
 
       - name: Deploy Streamlit Container App
         run: |
           az containerapp update \
             --name "${{ env.UI_APP_NAME }}" \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
-            --image "$UI_IMAGE"
+            --image "$UI_IMAGE" \
+            --revision-suffix "$REVISION_SUFFIX"
+
+      - name: Install Azure ML SDK
+        run: pip install -r requirements-register.txt
+
+      - name: Register model in Azure ML
+        run: |
+          python scripts/register_model.py \
+            --model reserve \
+            --commit-sha ${{ github.event.workflow_run.head_sha }}
+        env:
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Verify API health
         run: |
@@ -116,3 +136,4 @@ jobs:
           echo "- **UI image:** \`$UI_IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- **API URL:** https://${API_FQDN}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **UI URL:** https://${UI_FQDN}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Azure ML model:** \`reserve-forecaster\` registered" >> "$GITHUB_STEP_SUMMARY"
